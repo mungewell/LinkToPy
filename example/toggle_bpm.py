@@ -20,6 +20,8 @@ event_status = None
 event_time_at_beat = None
 event_beat_at_time = None
 
+mutex_link = None
+
 delta_us = None
 deltas = []
 deltasum = 0
@@ -101,7 +103,7 @@ def sched_setup():
     if s:
         event_status.wait(timeout=5)
         if not event_status.isSet():
-            print("Huh, status not responding. Abort!")
+            print("Huh, status not responding!")
             return
         
         if not tempo_beat:
@@ -113,13 +115,16 @@ def sched_setup():
             new_beat = tempo_beat + options.bar * options.quantum
 
             # check what 'ghost-time' the new_beat happens
+            mutex_link.acquire()
             event_time_at_beat.clear()
-            link.time_at_beat(new_beat, quantum=options.quantum, \
+            err = link.time_at_beat(new_beat, quantum=options.quantum, \
                     callback=callback_time_at_beat)
+            mutex_link.release()
 
-            event_time_at_beat.wait(timeout=1.0)
+            if not err:
+                event_time_at_beat.wait(timeout=0.5)
             if not event_time_at_beat.isSet():
-                print("TimeAtBeat slow response!")
+                print("TimeAtBeat slow response!", err)
                 continue
 
             tempo_beat = new_beat
@@ -138,14 +143,19 @@ def sched_setup():
         if not options.debug:
             return
 
+        mutex_link.acquire()
         event_beat_at_time.clear()
-        link.beat_at_time(time_to_ghost(when), quantum=options.quantum, \
+        err = link.beat_at_time(time_to_ghost(when), quantum=options.quantum, \
                 callback=callback_beat_at_time)
+        mutex_link.release()
 
-        event_beat_at_time.wait(timeout=0.5)
+        if not err:
+            event_beat_at_time.wait(timeout=0.5)
         if event_beat_at_time.isSet():
             print("Tempo change scheduled for beat: %f @ %f (now %f)" % \
                     (beat_at_time, time.monotonic(), when))
+        else:
+            print("BeatAtTime slow response!", err)
 
 
 def sched_toggle():
@@ -158,25 +168,30 @@ def sched_toggle():
         return
 
     if options.debug:
-        event_beat_at_time.clear()
         now = time.monotonic()
 
-        link.beat_at_time(time_to_ghost(now), \
+        mutex_link.acquire()
+        event_beat_at_time.clear()
+        err = link.beat_at_time(time_to_ghost(now), \
                 quantum=options.quantum, \
                 callback=callback_beat_at_time)
+        mutex_link.release()
 
-        event_beat_at_time.wait(timeout=0.5)
+        if not err:
+            event_beat_at_time.wait(timeout=0.5)
 
         if event_beat_at_time.isSet():
             print("Tempo set to: %f  (beat: %f @ %f)\n" % \
                     (tempos[tempo_index], beat_at_time, now))
         else:
-            print("BeatAtTime slow response!")
+            print("BeatAtTime slow response!", err)
 
+    mutex_link.acquire()
     link.set_bpm(tempos[tempo_index])
 
     # mark previous status values as invalid
     event_status.clear()
+    mutex_link.release()
 
     tempo_index = (tempo_index + 1) % len(tempos)
     sched_setup()
@@ -191,6 +206,7 @@ def sched_thread():
     # auto restart scheduler, should it ever complete all tasks
     while True:
         s.run()
+        #print("Scheduler exited")
         time.sleep(0.1)
 
 # ---------------------------------------------
@@ -230,37 +246,46 @@ if options.tempos:
         tempos.append(int(parse[i]))
 
 # setup scheduler in separate thread
-t = threading.Thread(target=sched_thread)
-t.start()
+mutex_link = threading.Lock()
 
 event_status = threading.Event()
 event_time_at_beat = threading.Event()
 event_beat_at_time = threading.Event()
 
+t = threading.Thread(target=sched_thread)
+t.start()
+
 # Start AbletonLink and register call back
 link = LinkToPy.LinkInterface("/home/simon/Carabiner/Carabiner_Linux_x64")
-link.status(callback_status)
+event_status.clear()
 
-time.sleep(1)
+mutex_link.acquire()
+err = link.status(callback_status)
+mutex_link.release()
+
+if not err:
+    event_status.wait(timeout=5)
+if not event_status.isSet():
+    sys.exit("Huh, status not responding", err)
 
 if options.play:
-    event_status.wait(timeout=5)
-    if not event_status.isSet():
-        sys.exit("Huh, status not responding")
-
     # force session to start playing
+    mutex_link.acquire()
     link.enable_start_stop_sync()
     link.start_playing(time_to_ghost(time.monotonic()))
+    mutex_link.release()
 
 while True:
     if playing:
         if not tempo_beat:
-            print("Scheduler 1st setup")
+            print("Scheduler setup tempo toggle")
             sched_setup()
     else:
         tempo_beat = None
 
     # keep checking status, so that we can average delta_us
+    mutex_link.acquire()
     link.status(callback_status)
-    time.sleep(0.1)
+    mutex_link.release()
+    time.sleep(0.5)
 
