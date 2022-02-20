@@ -8,6 +8,7 @@
 import LinkToPy
 import sched, time
 import threading
+import sys
 
 playing = None
 current_bpm = None
@@ -32,12 +33,7 @@ s = None
 
 tempo_beat = None
 tempo_index = 0
-tempos = [90, 110]  # fails
-tempos = [94, 106]  # fails
-tempos = [93, 107]  # fails
-tempos = [95, 105]  # passes, mostly
-tempos = [96, 104]  # passes
-tempos = [90, 110]  # fails
+tempos = [90, 110]
 
 # ---------------------------------------------
 
@@ -243,7 +239,13 @@ if options.tempos:
     tempos = []
     parse = options.tempos.split(',')
     for i in range(len(parse)):
-        tempos.append(int(parse[i]))
+        t = int(parse[i])
+        if t >= 20 and t <= 999:
+            tempos.append(t)
+        else:
+            print("Invalid tempo %d (must be 20-999)" % t)
+    if not len(tempos):
+        sys.exit("No valid tempo specified")
 
 # setup scheduler in separate thread
 mutex_link = threading.Lock()
