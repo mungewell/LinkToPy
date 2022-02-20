@@ -64,7 +64,7 @@ while True:
                     monotonic_us = int(time.monotonic() * 1000000)
                     print("Play: %d us (ghost time)" % (monotonic_us + delta_us))
                     link.start_playing(monotonic_us + delta_us)
-                
+
             if msg.data == (0x7f, 0x7f, 0x06, 0x01):
                 # MMC Stop
                 if playing == True:

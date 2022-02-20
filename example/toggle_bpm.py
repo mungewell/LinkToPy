@@ -49,7 +49,7 @@ def callback_status(cb):
     global playing, current_bpm, current_beat
 
     monotonic_us = int(time.monotonic() * 1000000)
- 
+
     if current_bpm != cb['bpm']:
         # changed, therefore we have to reset averaging
         deltas = []
@@ -101,7 +101,7 @@ def sched_setup():
         if not event_status.isSet():
             print("Huh, status not responding!")
             return
-        
+
         if not tempo_beat:
             beat = int(current_beat)
             tempo_beat = beat - (beat % options.quantum)
