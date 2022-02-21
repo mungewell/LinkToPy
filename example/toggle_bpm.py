@@ -8,6 +8,7 @@
 import LinkToPy
 import sched, time
 import threading
+import signal
 import sys
 
 playing = None
@@ -20,6 +21,7 @@ beat_at_time = None
 event_status = None
 event_time_at_beat = None
 event_beat_at_time = None
+event_terminate = None
 
 mutex_link = None
 
@@ -91,6 +93,9 @@ def callback_beat_at_time(cb):
 
 def sched_setup():
     global tempo_beat
+
+    if event_terminate.isSet():
+        return
 
     if not playing:
         #print("Not playing, don't schedule")
@@ -200,10 +205,26 @@ def sched_thread():
     s = sched.scheduler(time.monotonic, time.sleep)
 
     # auto restart scheduler, should it ever complete all tasks
-    while True:
+    while not event_terminate.isSet():
         s.run()
         #print("Scheduler exited")
         time.sleep(0.1)
+
+
+def signal_handler(signal, frame):
+    print("Terminate requested")
+
+    if event_terminate:
+        event_terminate.set()
+
+    if s:
+        for ev in s.queue:
+            s.cancel(ev)
+
+    if t:
+        t.join()
+
+    sys.exit("Terminated by SIG-INT")
 
 # ---------------------------------------------
 
@@ -247,12 +268,16 @@ if options.tempos:
     if not len(tempos):
         sys.exit("No valid tempo specified")
 
+# signal to catch CTRL-C
+signal.signal(signal.SIGINT, signal_handler)
+
 # setup scheduler in separate thread
 mutex_link = threading.Lock()
 
 event_status = threading.Event()
 event_time_at_beat = threading.Event()
 event_beat_at_time = threading.Event()
+event_terminate = threading.Event()
 
 t = threading.Thread(target=sched_thread)
 t.start()
