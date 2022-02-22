@@ -12,8 +12,7 @@ import signal
 import sys
 
 playing = None
-current_bpm = None
-current_beat = None
+prev_bpm = None
 
 time_at_beat = None
 beat_at_time = None
@@ -48,14 +47,15 @@ def ghost_to_time(ghost):
 
 def callback_status(cb):
     global delta_us, deltas, deltasum
-    global playing, current_bpm, current_beat
+    global playing, prev_bpm
 
     monotonic_us = int(time.monotonic() * 1000000)
 
-    if current_bpm != cb['bpm']:
+    if prev_bpm != cb['bpm']:
         # changed, therefore we have to reset averaging
         deltas = []
         deltasum = 0
+    prev_bpm = cb['bpm']
 
     computed_us = cb['start'] + (1000000 * (cb['beat'] * 60.0 / cb['bpm']))
     delta = computed_us - monotonic_us
@@ -72,8 +72,6 @@ def callback_status(cb):
     if 'playing' in cb:
         playing = cb['playing']
 
-    current_bpm = cb['bpm']
-    current_beat = cb['beat']
     event_status.set()
 
 
@@ -108,7 +106,7 @@ def sched_setup():
             return
 
         if not tempo_beat:
-            beat = int(current_beat)
+            beat = int(link.beat_)
             tempo_beat = beat - (beat % options.quantum)
             tempo_index = 0
 
@@ -221,10 +219,7 @@ def signal_handler(signal, frame):
         for ev in s.queue:
             s.cancel(ev)
 
-    if t:
-        t.join()
-
-    sys.exit("Terminated by SIG-INT")
+    sys.exit("Terminated by SIGINT")
 
 # ---------------------------------------------
 
@@ -280,6 +275,7 @@ event_beat_at_time = threading.Event()
 event_terminate = threading.Event()
 
 t = threading.Thread(target=sched_thread)
+t.daemon = True
 t.start()
 
 # Start AbletonLink and register call back
@@ -305,7 +301,7 @@ if options.play:
 while True:
     if playing:
         if not tempo_beat:
-            print("Scheduler setup tempo toggle")
+            print("Scheduler - Tempos: ", tempos)
             sched_setup()
     else:
         tempo_beat = None
@@ -314,5 +310,6 @@ while True:
     mutex_link.acquire()
     link.status(callback_status)
     mutex_link.release()
+
     time.sleep(0.5)
 
