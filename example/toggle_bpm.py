@@ -20,8 +20,9 @@ beat_at_time = None
 event_status = None
 event_time_at_beat = None
 event_beat_at_time = None
-event_terminate = None
 
+s = None
+link = None
 mutex_link = None
 
 delta_us = None
@@ -29,8 +30,6 @@ deltas = []
 deltasum = 0
 
 options = None
-link = None
-s = None
 
 tempo_beat = None
 tempo_index = 0
@@ -92,7 +91,7 @@ def callback_beat_at_time(cb):
 def sched_setup():
     global tempo_beat
 
-    if event_terminate.isSet():
+    if not link:
         return
 
     if not playing:
@@ -203,22 +202,13 @@ def sched_thread():
     s = sched.scheduler(time.monotonic, time.sleep)
 
     # auto restart scheduler, should it ever complete all tasks
-    while not event_terminate.isSet():
+    while True:
         s.run()
         #print("Scheduler exited")
         time.sleep(0.1)
 
 
 def signal_handler(signal, frame):
-    print("Terminate requested")
-
-    if event_terminate:
-        event_terminate.set()
-
-    if s:
-        for ev in s.queue:
-            s.cancel(ev)
-
     sys.exit("Terminated by SIGINT")
 
 # ---------------------------------------------
@@ -272,7 +262,6 @@ mutex_link = threading.Lock()
 event_status = threading.Event()
 event_time_at_beat = threading.Event()
 event_beat_at_time = threading.Event()
-event_terminate = threading.Event()
 
 t = threading.Thread(target=sched_thread)
 t.daemon = True
