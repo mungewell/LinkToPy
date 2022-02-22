@@ -256,36 +256,32 @@ if options.tempos:
 # signal to catch CTRL-C
 signal.signal(signal.SIGINT, signal_handler)
 
-# setup scheduler in separate thread
+# Start AbletonLink/LinkToPy
 mutex_link = threading.Lock()
+mutex_link.acquire()
 
 event_status = threading.Event()
 event_time_at_beat = threading.Event()
 event_beat_at_time = threading.Event()
 
-t = threading.Thread(target=sched_thread)
-t.daemon = True
-t.start()
-
-# Start AbletonLink and register call back
 link = LinkToPy.LinkInterface("/home/simon/Carabiner/Carabiner_Linux_x64")
-event_status.clear()
+link.enable_start_stop_sync()
 
-mutex_link.acquire()
 err = link.status(callback_status)
-mutex_link.release()
-
 if not err:
-    event_status.wait(timeout=5)
+    event_status.wait(timeout=15)
 if not event_status.isSet():
-    sys.exit("Huh, status not responding", err)
+    sys.exit("LinkToPy not responding", err)
 
 if options.play:
     # force session to start playing
-    mutex_link.acquire()
-    link.enable_start_stop_sync()
     link.start_playing(time_to_ghost(time.monotonic()))
-    mutex_link.release()
+mutex_link.release()
+
+# setup scheduler in separate thread
+t = threading.Thread(target=sched_thread)
+t.daemon = True
+t.start()
 
 while True:
     if playing:
